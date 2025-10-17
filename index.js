@@ -18,19 +18,7 @@ const DEFAULT_CONFIG = {
     pass: 'mixtura'
   },
   onion: {
-    host: 'ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion'
-  },
-  headers: {
-    //'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101 Firefox/102.0',
-    //'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    /*'Accept-Language': 'en-US,en;q=0.5',
-    'Accept-Encoding': 'gzip, deflate',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Site': 'none',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-User': '?1',
-    'DNT': '1'*/
+    host: 'qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
   }
 };
 
@@ -96,10 +84,9 @@ function proxyRequest(targetUrl, method, headers, body) {
       method: method,
       path: targetUrl,
       headers: {
-        'Host': parsedTarget.hostname,
-        'Proxy-Authorization': getProxyAuth(),
-        'Connection': 'keep-alive',
-        ...headers
+        ...headers, // Pass ALL original headers unchanged
+        'Host': parsedTarget.hostname, // Only override Host for onion
+        'Proxy-Authorization': getProxyAuth() // Add proxy auth
       },
       timeout: 60000,
       rejectUnauthorized: false
@@ -201,8 +188,7 @@ app.get('/___config', (req, res) => {
       host: config.proxy.host,
       port: config.proxy.port,
       user: config.proxy.user
-    },
-    headers: config.headers
+    }
   });
 });
 
@@ -218,28 +204,25 @@ app.all('*', async (req, res) => {
     
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     
-    // Use configured headers
-    const headers = { ...config.headers };
-
-    // Copy safe headers from request
-    const safeToCopy = ['cookie', 'referer', 'content-type', 'content-length', 'authorization'];
-    safeToCopy.forEach(h => {
-      if (req.headers[h]) {
-        headers[h] = req.headers[h];
-      }
-    });
+    // Pass ALL headers from client unchanged
+    const headers = { ...req.headers };
+    
+    // Only remove internal proxy/forwarding headers
+    delete headers['proxy-connection'];
+    delete headers['proxy-authorization'];
 
     // Make request
     const response = await proxyRequest(targetUrl, req.method, headers, req.body);
 
     console.log(`[${new Date().toISOString()}] Response: ${response.status}`);
 
-    // Copy response headers
+    // Copy ALL response headers unchanged
     const responseHeaders = { ...response.headers };
+    
+    // Only remove transfer-encoding (Express handles this)
     delete responseHeaders['transfer-encoding'];
-    delete responseHeaders['connection'];
 
-    // Handle redirects
+    // Handle redirects - rewrite location headers
     if (responseHeaders.location) {
       responseHeaders.location = responseHeaders.location.replace(
         new RegExp(`http://${config.onion.host}`, 'g'),
@@ -247,7 +230,7 @@ app.all('*', async (req, res) => {
       );
     }
 
-    // Send response
+    // Send response with original headers
     res.status(response.status);
     Object.keys(responseHeaders).forEach(key => {
       res.setHeader(key, responseHeaders[key]);
