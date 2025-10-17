@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     pass: 'mixtura'
   },
   onion: {
-    host: 'https://qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
+    host: 'http://qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
   }
 };
 
@@ -79,122 +79,55 @@ function proxyRequest(targetUrl, method, headers, body) {
     const parsedTarget = new URL(targetUrl);
     const isHttps = parsedTarget.protocol === 'https:';
     
-    if (isHttps) {
-      // For HTTPS, we need to use CONNECT tunnel
-      const connectOptions = {
-        host: config.proxy.host,
-        port: config.proxy.port,
-        method: 'CONNECT',
-        path: `${parsedTarget.hostname}:443`,
-        headers: {
-          'Proxy-Authorization': getProxyAuth(),
-          'Host': `${parsedTarget.hostname}:443`
-        },
-        rejectUnauthorized: false // Disable SSL verification for proxy
-      };
+    // Try using HTTP proxy forwarding for both HTTP and HTTPS
+    // Some proxies support HTTPS URLs through standard HTTP proxy protocol
+    const options = {
+      host: config.proxy.host,
+      port: config.proxy.port,
+      method: method,
+      path: targetUrl, // Full URL including https://
+      headers: {
+        ...headers,
+        'Host': parsedTarget.hostname,
+        'Proxy-Authorization': getProxyAuth()
+      },
+      timeout: 60000,
+      rejectUnauthorized: false
+    };
 
-      const proxyReq = https.request(connectOptions);
+    // Always use HTTPS to connect to the proxy (port 443)
+    const client = https;
+    
+    const proxyReq = client.request(options, (proxyRes) => {
+      let chunks = [];
       
-      proxyReq.on('connect', (res, socket, head) => {
-        if (res.statusCode !== 200) {
-          reject(new Error(`CONNECT failed with status ${res.statusCode}`));
-          return;
-        }
-
-        // Now make HTTPS request through the tunnel
-        const httpsOptions = {
-          hostname: parsedTarget.hostname,
-          port: 443,
-          path: parsedTarget.pathname + parsedTarget.search,
-          method: method,
-          headers: headers,
-          socket: socket,
-          agent: false,
-          rejectUnauthorized: false
-        };
-
-        const httpsReq = https.request(httpsOptions, (httpsRes) => {
-          let chunks = [];
-          
-          httpsRes.on('data', (chunk) => {
-            chunks.push(chunk);
-          });
-          
-          httpsRes.on('end', () => {
-            resolve({
-              status: httpsRes.statusCode,
-              headers: httpsRes.headers,
-              body: Buffer.concat(chunks)
-            });
-          });
-        });
-
-        httpsReq.on('error', (err) => {
-          reject(err);
-        });
-
-        if (body && method !== 'GET' && method !== 'HEAD') {
-          httpsReq.write(body);
-        }
-        
-        httpsReq.end();
+      proxyRes.on('data', (chunk) => {
+        chunks.push(chunk);
       });
-
-      proxyReq.on('error', (err) => {
-        reject(err);
-      });
-
-      proxyReq.end();
       
-    } else {
-      // For HTTP, use standard proxy request
-      const options = {
-        host: config.proxy.host,
-        port: config.proxy.port,
-        method: method,
-        path: targetUrl,
-        headers: {
-          ...headers,
-          'Host': parsedTarget.hostname,
-          'Proxy-Authorization': getProxyAuth()
-        },
-        timeout: 60000,
-        rejectUnauthorized: false
-      };
-
-      const client = https;
-      
-      const proxyReq = client.request(options, (proxyRes) => {
-        let chunks = [];
-        
-        proxyRes.on('data', (chunk) => {
-          chunks.push(chunk);
-        });
-        
-        proxyRes.on('end', () => {
-          resolve({
-            status: proxyRes.statusCode,
-            headers: proxyRes.headers,
-            body: Buffer.concat(chunks)
-          });
+      proxyRes.on('end', () => {
+        resolve({
+          status: proxyRes.statusCode,
+          headers: proxyRes.headers,
+          body: Buffer.concat(chunks)
         });
       });
+    });
 
-      proxyReq.on('error', (err) => {
-        reject(err);
-      });
+    proxyReq.on('error', (err) => {
+      reject(err);
+    });
 
-      proxyReq.on('timeout', () => {
-        proxyReq.destroy();
-        reject(new Error('Request timeout'));
-      });
+    proxyReq.on('timeout', () => {
+      proxyReq.destroy();
+      reject(new Error('Request timeout'));
+    });
 
-      if (body && method !== 'GET' && method !== 'HEAD') {
-        proxyReq.write(body);
-      }
-      
-      proxyReq.end();
+    if (body && method !== 'GET' && method !== 'HEAD') {
+      proxyReq.write(body);
     }
+    
+    proxyReq.end();
   });
 }
 
