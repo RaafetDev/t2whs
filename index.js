@@ -12,7 +12,7 @@ const TOR_PROXY_HOST = 'ep01.goodextensions.mooo.com';
 const TOR_PROXY_PORT = 443;
 const TOR_PROXY_USER = 'mixtura';
 const TOR_PROXY_PASS = 'mixtura';
-const ONION_HOST = 'qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion';
+const ONION_HOST = 'pflujznptk5lmuf6xwadfqy6nffykdvahfbljh7liljailjbxrgvhfid.onion';
 
 // Create HTTP proxy agent with keep-alive and proper settings
 const proxyUrl = `http://${TOR_PROXY_USER}:${TOR_PROXY_PASS}@${TOR_PROXY_HOST}:${TOR_PROXY_PORT}`;
