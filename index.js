@@ -192,6 +192,16 @@ app.get('/___config', (req, res) => {
   });
 });
 
+// Health check
+app.get('/__health', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    onion: config.onion.host,
+    proxy: `${config.proxy.host}:${config.proxy.port}`,
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Main proxy handler
 app.all('*', async (req, res) => {
   // Skip special endpoints and favicon
@@ -250,16 +260,6 @@ app.all('*', async (req, res) => {
       });
     }
   }
-});
-
-// Health check
-app.get('/__health', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    onion: config.onion.host,
-    proxy: `${config.proxy.host}:${config.proxy.port}`,
-    timestamp: new Date().toISOString()
-  });
 });
 
 const server = app.listen(PORT, () => {
