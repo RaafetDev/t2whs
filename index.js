@@ -1,8 +1,7 @@
 const express = require('express');
-const { HttpProxyAgent } = require('http-proxy-agent');
-const fetch = require('node-fetch');
 const http = require('http');
 const https = require('https');
+const { URL } = require('url');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,85 +11,109 @@ const TOR_PROXY_HOST = 'ep01.goodextensions.mooo.com';
 const TOR_PROXY_PORT = 443;
 const TOR_PROXY_USER = 'mixtura';
 const TOR_PROXY_PASS = 'mixtura';
-const ONION_HOST = 'pflujznptk5lmuf6xwadfqy6nffykdvahfbljh7liljailjbxrgvhfid.onion';
+const ONION_HOST = 'qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion';
 
-// Create HTTP proxy agent with keep-alive and proper settings
-const proxyUrl = `http://${TOR_PROXY_USER}:${TOR_PROXY_PASS}@${TOR_PROXY_HOST}:${TOR_PROXY_PORT}`;
-const agent = new HttpProxyAgent(proxyUrl, {
-  keepAlive: true,
-  keepAliveMsecs: 1000,
-  maxSockets: 50,
-  maxFreeSockets: 10,
-  timeout: 60000,
-  scheduling: 'lifo'
-});
-
-// Keep connection alive
-setInterval(() => {
-  // Prevent agent from timing out
-}, 30000);
+// Create auth header
+const proxyAuth = 'Basic ' + Buffer.from(`${TOR_PROXY_USER}:${TOR_PROXY_PASS}`).toString('base64');
 
 // Middleware to parse request body
 app.use(express.raw({ type: '*/*', limit: '10mb' }));
 
+// Function to make request through HTTP proxy
+function proxyRequest(targetUrl, method, headers, body) {
+  return new Promise((resolve, reject) => {
+    const parsedTarget = new URL(targetUrl);
+    
+    // Build proxy request
+    const options = {
+      host: TOR_PROXY_HOST,
+      port: TOR_PROXY_PORT,
+      method: method,
+      path: targetUrl, // Full URL as path for HTTP proxy
+      headers: {
+        'Host': parsedTarget.hostname,
+        'Proxy-Authorization': proxyAuth,
+        'Connection': 'keep-alive',
+        ...headers
+      },
+      timeout: 60000
+    };
+
+    // Use HTTPS for proxy connection on port 443
+    const client = https;
+    
+    const proxyReq = client.request(options, (proxyRes) => {
+      let chunks = [];
+      
+      proxyRes.on('data', (chunk) => {
+        chunks.push(chunk);
+      });
+      
+      proxyRes.on('end', () => {
+        resolve({
+          status: proxyRes.statusCode,
+          headers: proxyRes.headers,
+          body: Buffer.concat(chunks)
+        });
+      });
+    });
+
+    proxyReq.on('error', (err) => {
+      reject(err);
+    });
+
+    proxyReq.on('timeout', () => {
+      proxyReq.destroy();
+      reject(new Error('Request timeout'));
+    });
+
+    if (body && method !== 'GET' && method !== 'HEAD') {
+      proxyReq.write(body);
+    }
+    
+    proxyReq.end();
+  });
+}
+
 // Main proxy handler
 app.all('*', async (req, res) => {
-  // Skip favicon if causing issues
+  // Skip favicon
   if (req.url === '/favicon.ico') {
     return res.status(204).end();
   }
 
   try {
-    // Build target URL
     const targetUrl = `http://${ONION_HOST}${req.url}`;
     
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     
     // Prepare headers
     const headers = {
-      ...req.headers,
-      'Host': ONION_HOST,
-      'Connection': 'keep-alive',
+      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': req.headers.accept || '*/*',
-      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      'Accept-Encoding': req.headers['accept-encoding'] || 'gzip, deflate',
+      'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9'
     };
-    
-    // Remove problematic headers
-    delete headers['host'];
-    delete headers['proxy-connection'];
-    delete headers['proxy-authorization'];
-    delete headers['x-forwarded-for'];
-    delete headers['x-forwarded-proto'];
-    delete headers['x-forwarded-host'];
-    
-    // Make request through Tor proxy with extended timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 60000);
-    
-    const response = await fetch(targetUrl, {
-      method: req.method,
-      headers: headers,
-      body: req.method !== 'GET' && req.method !== 'HEAD' ? req.body : undefined,
-      agent: agent,
-      redirect: 'manual',
-      signal: controller.signal,
-      compress: true
+
+    // Copy safe headers
+    const safeToCopy = ['cookie', 'referer', 'content-type', 'content-length', 'authorization'];
+    safeToCopy.forEach(h => {
+      if (req.headers[h]) {
+        headers[h] = req.headers[h];
+      }
     });
 
-    clearTimeout(timeoutId);
+    // Make request
+    const response = await proxyRequest(targetUrl, req.method, headers, req.body);
 
     console.log(`[${new Date().toISOString()}] Response: ${response.status}`);
 
     // Copy response headers
-    const responseHeaders = {};
-    response.headers.forEach((value, key) => {
-      if (key.toLowerCase() !== 'transfer-encoding' && 
-          key.toLowerCase() !== 'connection') {
-        responseHeaders[key] = value;
-      }
-    });
+    const responseHeaders = { ...response.headers };
+    delete responseHeaders['transfer-encoding'];
+    delete responseHeaders['connection'];
 
-    // Handle redirects - rewrite location headers
+    // Handle redirects
     if (responseHeaders.location) {
       responseHeaders.location = responseHeaders.location.replace(
         new RegExp(`http://${ONION_HOST}`, 'g'),
@@ -98,38 +121,28 @@ app.all('*', async (req, res) => {
       );
     }
 
-    // Set response headers and status
+    // Send response
     res.status(response.status);
     Object.keys(responseHeaders).forEach(key => {
       res.setHeader(key, responseHeaders[key]);
     });
-
-    // Stream response body
-    const buffer = await response.buffer();
-    res.send(buffer);
+    res.send(response.body);
 
   } catch (error) {
     console.error(`[${new Date().toISOString()}] Proxy error:`, error.message);
-    
-    if (error.name === 'AbortError') {
-      return res.status(504).json({
-        error: 'Gateway Timeout',
-        message: 'Request to onion service timed out'
-      });
-    }
     
     if (!res.headersSent) {
       res.status(502).json({
         error: 'Bad Gateway',
         message: 'Failed to connect to onion service',
         details: error.message,
-        hint: 'The Tor proxy or onion service may be temporarily unavailable'
+        proxy: `${TOR_PROXY_HOST}:${TOR_PROXY_PORT}`
       });
     }
   }
 });
 
-// Health check endpoint
+// Health check
 app.get('/__health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -139,29 +152,11 @@ app.get('/__health', (req, res) => {
   });
 });
 
-// Error handler
-app.use((err, req, res, next) => {
-  console.error('Express error:', err);
-  if (!res.headersSent) {
-    res.status(500).json({ error: 'Internal Server Error' });
-  }
-});
-
 const server = app.listen(PORT, () => {
   console.log(`Tor2Web proxy running on port ${PORT}`);
   console.log(`Proxying to: ${ONION_HOST}`);
   console.log(`Via Tor proxy: ${TOR_PROXY_HOST}:${TOR_PROXY_PORT}`);
 });
 
-// Increase server timeout
 server.keepAliveTimeout = 65000;
 server.headersTimeout = 66000;
-
-// Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM received, closing server...');
-  server.close(() => {
-    console.log('Server closed');
-    process.exit(0);
-  });
-});
