@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     pass: 'mixtura'
   },
   onion: {
-    host: 'http://qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
+    host: 'https://qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
   }
 };
 
