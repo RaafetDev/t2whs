@@ -22,7 +22,7 @@ app.get('/health', (req, res) => {
 });
 
 // Route to handle /api/v1 requests
-app.all('/api/v1/*', async (req, res) => {
+app.all('/*', async (req, res) => {
   try {
     // Construct the full URL for the hidden service
     const targetPath = req.originalUrl.startsWith('/api/v1') ? req.originalUrl.slice(7) : req.originalUrl;
