@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     pass: 'mixtura'
   },
   onion: {
-    host: 'qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
+    host: 'ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion'
   },
   headers: {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101 Firefox/102.0',
