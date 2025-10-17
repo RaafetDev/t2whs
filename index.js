@@ -1,21 +1,20 @@
 const express = require('express');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { HttpProxyAgent } = require('http-proxy-agent');
 const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Tor proxy configuration
-const TOR_PROXY_TYPE = 'HTTPS';
 const TOR_PROXY_HOST = 'ep01.goodextensions.mooo.com';
 const TOR_PROXY_PORT = 443;
 const TOR_PROXY_USER = 'mixtura';
 const TOR_PROXY_PASS = 'mixtura';
 const ONION_HOST = 'qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion';
 
-// Create HTTPS proxy agent with authentication
-const proxyUrl = `${TOR_PROXY_TYPE.toLowerCase()}://${TOR_PROXY_USER}:${TOR_PROXY_PASS}@${TOR_PROXY_HOST}:${TOR_PROXY_PORT}`;
-const agent = new HttpsProxyAgent(proxyUrl);
+// Create HTTP proxy agent with authentication (not HTTPS CONNECT)
+const proxyUrl = `http://${TOR_PROXY_USER}:${TOR_PROXY_PASS}@${TOR_PROXY_HOST}:${TOR_PROXY_PORT}`;
+const agent = new HttpProxyAgent(proxyUrl);
 
 // Middleware to parse request body
 app.use(express.raw({ type: '*/*', limit: '10mb' }));
