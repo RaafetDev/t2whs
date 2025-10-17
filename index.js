@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     pass: 'mixtura'
   },
   onion: {
-    host: 'ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion'
+    host: 'https://ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion'
   }
 };
 
@@ -200,7 +200,7 @@ app.all('*', async (req, res) => {
   }
 
   try {
-    const targetUrl = `http://${config.onion.host}${req.url}`;
+    const targetUrl = `${config.onion.host}${req.url}`;
     
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     
@@ -225,7 +225,7 @@ app.all('*', async (req, res) => {
     // Handle redirects - rewrite location headers
     if (responseHeaders.location) {
       responseHeaders.location = responseHeaders.location.replace(
-        new RegExp(`http://${config.onion.host}`, 'g'),
+        new RegExp(config.onion.host, 'g'),
         `${req.protocol}://${req.get('host')}`
       );
     }
