@@ -88,12 +88,18 @@ app.all('*', async (req, res) => {
     
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
     
-    // Prepare headers
+    // Prepare headers - Tor Browser fingerprint
     const headers = {
-      'User-Agent': req.headers['user-agent'] || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': req.headers.accept || '*/*',
-      'Accept-Encoding': req.headers['accept-encoding'] || 'gzip, deflate',
-      'Accept-Language': req.headers['accept-language'] || 'en-US,en;q=0.9'
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101 Firefox/102.0',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-US,en;q=0.5',
+      'Accept-Encoding': 'gzip, deflate',
+      'Upgrade-Insecure-Requests': '1',
+      'Sec-Fetch-Site': 'none',
+      'Sec-Fetch-Mode': 'navigate',
+      'Sec-Fetch-Dest': 'document',
+      'Sec-Fetch-User': '?1',
+      'DNT': '1'
     };
 
     // Copy safe headers
