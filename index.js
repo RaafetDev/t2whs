@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     pass: 'mixtura'
   },
   onion: {
-    host: 'https://ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion'
+    host: 'http://qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
   }
 };
 
@@ -82,7 +82,7 @@ function proxyRequest(targetUrl, method, headers, body) {
       host: config.proxy.host,
       port: config.proxy.port,
       method: method,
-      path: targetUrl,
+      path: targetUrl, // Full URL including protocol
       headers: {
         ...headers, // Pass ALL original headers unchanged
         'Host': parsedTarget.hostname, // Only override Host for onion
@@ -92,6 +92,7 @@ function proxyRequest(targetUrl, method, headers, body) {
       rejectUnauthorized: false
     };
 
+    // Always use HTTPS to connect to the proxy (port 443)
     const client = https;
     
     const proxyReq = client.request(options, (proxyRes) => {
@@ -194,9 +195,19 @@ app.get('/___config', (req, res) => {
 
 // Health check
 app.get('/__health', (req, res) => {
+  // Parse onion URL to show just hostname
+  let onionHost = config.onion.host;
+  try {
+    const parsed = new URL(onionHost.startsWith('http') ? onionHost : 'http://' + onionHost);
+    onionHost = parsed.hostname;
+  } catch (e) {
+    // Keep as-is if parsing fails
+  }
+  
   res.json({ 
     status: 'ok', 
     onion: config.onion.host,
+    onion_hostname: onionHost,
     proxy: `${config.proxy.host}:${config.proxy.port}`,
     timestamp: new Date().toISOString()
   });
@@ -210,9 +221,19 @@ app.all('*', async (req, res) => {
   }
 
   try {
-    const targetUrl = `${config.onion.host}${req.url}`;
+    // Build target URL with protocol from config
+    let onionUrl = config.onion.host;
     
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    // Ensure protocol is included
+    if (!onionUrl.startsWith('http://') && !onionUrl.startsWith('https://')) {
+      onionUrl = 'http://' + onionUrl;
+    }
+    
+    // Parse base URL and append request path
+    const baseUrl = new URL(onionUrl);
+    const targetUrl = `${baseUrl.protocol}//${baseUrl.hostname}${req.url}`;
+    
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} -> ${targetUrl}`);
     
     // Pass ALL headers from client unchanged
     const headers = { ...req.headers };
@@ -232,10 +253,11 @@ app.all('*', async (req, res) => {
     // Only remove transfer-encoding (Express handles this)
     delete responseHeaders['transfer-encoding'];
 
-    // Handle redirects - rewrite location headers
+    // Handle redirects - rewrite location headers for both http and https
     if (responseHeaders.location) {
+      const onionBase = baseUrl.protocol + '//' + baseUrl.hostname;
       responseHeaders.location = responseHeaders.location.replace(
-        new RegExp(config.onion.host, 'g'),
+        new RegExp(onionBase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'),
         `${req.protocol}://${req.get('host')}`
       );
     }
@@ -251,11 +273,20 @@ app.all('*', async (req, res) => {
     console.error(`[${new Date().toISOString()}] Proxy error:`, error.message);
     
     if (!res.headersSent) {
+      // Parse onion URL for error display
+      let displayHost = config.onion.host;
+      try {
+        const parsed = new URL(displayHost.startsWith('http') ? displayHost : 'http://' + displayHost);
+        displayHost = parsed.href;
+      } catch (e) {
+        displayHost = config.onion.host;
+      }
+      
       res.status(502).json({
         error: 'Bad Gateway',
         message: 'Failed to connect to onion service',
         details: error.message,
-        onion: config.onion.host,
+        onion: displayHost,
         proxy: `${config.proxy.host}:${config.proxy.port}`
       });
     }
@@ -263,8 +294,17 @@ app.all('*', async (req, res) => {
 });
 
 const server = app.listen(PORT, () => {
+  // Parse onion URL for display
+  let displayHost = config.onion.host;
+  try {
+    const parsed = new URL(displayHost.startsWith('http') ? displayHost : 'http://' + displayHost);
+    displayHost = parsed.href;
+  } catch (e) {
+    displayHost = config.onion.host;
+  }
+  
   console.log(`Tor2Web proxy running on port ${PORT}`);
-  console.log(`Proxying to: ${config.onion.host}`);
+  console.log(`Proxying to: ${displayHost}`);
   console.log(`Via Tor proxy: ${config.proxy.host}:${config.proxy.port}`);
   console.log(`Config file: ${CONFIG_FILE}`);
 });
