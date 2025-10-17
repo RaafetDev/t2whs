@@ -13,7 +13,7 @@ const proxyAgent = new HttpsProxyAgent(proxyUrl);
 // Target Tor hidden service
 const onionUrl = 'http://ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion';
 
-// Middleware to parse JSON and URL-encoded bodies (for Cobalt Strike compatibility)
+// Middleware to parse JSON and URL-encoded bodies
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -39,14 +39,17 @@ app.all('/*', async (req, res) => {
         ...req.headers,
         host: new URL(onionUrl).host, // Set correct host for .onion
         'X-Forwarded-For': undefined, // Remove for anonymity
-        'Connection': 'keep-alive', // Ensure compatibility
+        'Connection': 'keep-alive',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        // Uncomment and add API key if required by Cobalt Strike
+        // 'Authorization': 'Bearer YOUR_API_KEY',
       },
       data: req.body,
       proxy: false, // Disable axios default proxy
       httpAgent: proxyAgent,
       httpsAgent: proxyAgent,
-      timeout: 60000, // Increased to 60s for Tor network
-      validateStatus: (status) => status >= 200 && status < 600, // Capture all status codes for debugging
+      timeout: 90000, // 90s timeout for Tor network
+      validateStatus: (status) => status >= 200 && status < 600, // Capture all status codes
     });
 
     console.log(`Response received: ${response.status} ${response.statusText}`);
@@ -65,8 +68,9 @@ app.all('/*', async (req, res) => {
       code: error.code,
       responseStatus: error.response?.status,
       responseData: error.response?.data,
+      requestUrl: targetUrl,
     });
-    res.status(500).json({
+    res.status(error.response?.status || 500).json({
       error: 'Internal Server Error',
       message: error.message,
       details: error.response?.data || 'No additional details available',
