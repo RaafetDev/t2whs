@@ -36,7 +36,8 @@ function proxyRequest(targetUrl, method, headers, body) {
         'Connection': 'keep-alive',
         ...headers
       },
-      timeout: 60000
+      timeout: 60000,
+      rejectUnauthorized: false // Disable SSL verification for proxy
     };
 
     // Use HTTPS for proxy connection on port 443
