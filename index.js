@@ -1,21 +1,14 @@
 const express = require('express');
 const axios = require('axios');
-const HttpsProxyAgent = require('https-proxy-agent');
+const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Tor HTTPS proxy configuration
-const proxyOptions = {
-  host: 'ep01.goodextensions.mooo.com',
-  port: 443,
-  auth: 'mixtura:mixtura',
-  secureProxy: true,
-};
-
-// Create proxy agent
-const proxyAgent = new HttpsProxyAgent(proxyOptions);
+const proxyUrl = 'https://mixtura:mixtura@ep01.goodextensions.mooo.com:443';
+const proxyAgent = new HttpsProxyAgent(proxyUrl);
 
 // Target Tor hidden service
 const onionUrl = 'http://ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion/api/v1';
@@ -29,10 +22,10 @@ app.get('/health', (req, res) => {
 });
 
 // Route to handle /api/v1 requests
-app.all('/*', async (req, res) => {
+app.all('/api/v1/*', async (req, res) => {
   try {
     // Construct the full URL for the hidden service
-    const targetPath = req.originalUrl.replace('/api/v1', '');
+    const targetPath = req.originalUrl.startsWith('/api/v1') ? req.originalUrl.slice(7) : req.originalUrl;
     const targetUrl = `${onionUrl}${targetPath}`;
 
     // Forward the request to the Tor hidden service
