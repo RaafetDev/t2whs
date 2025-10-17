@@ -18,7 +18,7 @@ const DEFAULT_CONFIG = {
     pass: 'mixtura'
   },
   onion: {
-    host: 'https://qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
+    host: 'http://qd5y2p2s5ufxaz4dapjwkvjav5xnhfgngaw2y24syfwlxjkipswdlpid.onion'
   }
 };
 
@@ -89,7 +89,8 @@ function proxyRequest(targetUrl, method, headers, body) {
         headers: {
           'Proxy-Authorization': getProxyAuth(),
           'Host': `${parsedTarget.hostname}:443`
-        }
+        },
+        rejectUnauthorized: false // Disable SSL verification for proxy
       };
 
       const proxyReq = https.request(connectOptions);
