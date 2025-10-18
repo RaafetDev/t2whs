@@ -4,7 +4,7 @@ const { HttpsProxyAgent } = require('https-proxy-agent');
 
 // Initialize Express app
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 // Tor HTTPS proxy configuration
 const proxyUrl = 'https://mixtura:mixtura@ep01.goodextensions.mooo.com:443';
@@ -24,12 +24,14 @@ app.get('/health', (req, res) => {
 
 // Route to handle all requests
 app.all('/*', async (req, res) => {
+  let targetUrl; // Declare targetUrl in outer scope
   try {
     // Construct the full URL for the hidden service
     const targetPath = req.originalUrl;
-    const targetUrl = `${onionUrl}${targetPath}`;
+    targetUrl = `${onionUrl}${targetPath}`;
     
     console.log(`Forwarding request: ${req.method} ${targetUrl}`);
+    console.log('Request headers:', req.headers);
 
     // Forward the request to the Tor hidden service
     const response = await axios({
@@ -53,6 +55,8 @@ app.all('/*', async (req, res) => {
     });
 
     console.log(`Response received: ${response.status} ${response.statusText}`);
+    console.log('Response headers:', response.headers);
+    console.log('Response data:', response.data);
 
     // Forward response headers and status
     res.status(response.status);
@@ -67,6 +71,7 @@ app.all('/*', async (req, res) => {
       message: error.message,
       code: error.code,
       responseStatus: error.response?.status,
+      responseHeaders: error.response?.headers,
       responseData: error.response?.data,
       requestUrl: targetUrl,
     });
