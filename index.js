@@ -1,14 +1,14 @@
 const express = require('express');
 const axios = require('axios');
-const { HttpsProxyAgent } = require('https-proxy-agent');
+const { HttpProxyAgent } = require('http-proxy-agent');
 
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Tor HTTPS proxy configuration
-const proxyUrl = 'https://mixtura:mixtura@ep01.goodextensions.mooo.com:443';
-const proxyAgent = new HttpsProxyAgent(proxyUrl);
+// Tor HTTP proxy configuration
+const proxyUrl = 'http://mixtura:mixtura@ep01.goodextensions.mooo.com:443';
+const proxyAgent = new HttpProxyAgent(proxyUrl);
 
 // Target Tor hidden service
 const onionUrl = 'http://ttcbgkpnl6at7dqhroa2shu44zqxzpwwwvdxbzoqznxk7lg5xso6bbqd.onion';
